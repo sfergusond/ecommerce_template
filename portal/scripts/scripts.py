@@ -6,6 +6,7 @@ import os
 
 from scripts.postgres import SELECT, INSERT, UPDATE, DELETE
 
+# Photo upload config
 cloud.config(
         cloud_name=os.environ['CLOUDINARY_NAME'],
         api_key=os.environ['CLOUDINARY_KEY'],
@@ -13,6 +14,19 @@ cloud.config(
         )
 
 def handle_new_item(form, files):
+    """
+    Creates a new product.
+    Adds photos to Cloudinary, then inserts a new row in the database with provided metadata and
+    URLs to the uploaded photos
+
+    Parameters
+    ----------
+    form : dict
+        The cleaned form containing metadata
+    files : list
+        The photos to upload to Cloudinary
+    """
+
     # Upload primary photo
     photo_primary = form['photo_primary'].read()
     photo_primary_url = cloud.uploader.upload(photo_primary, folder='againstthegrain')['secure_url']
@@ -30,20 +44,32 @@ def handle_new_item(form, files):
     else:
         price = float(form['price'])
 
-    description = form['description'].replace("'", '').replace('"', '')
+    description = form['description'].replace("'", '').replace('"', '') # Remove quotations so no issues occur during the SQL execution
 
     # Insert into DB
     INSERT('item', vals=f"DEFAULT, '{form['title']}', '{description}', {price}, '{photo_primary_url}', ARRAY{photo_urls}::character varying[]")
 
 def handle_edit_item(item_id, form):
-    cols, vals = 'name, price', f"'{form['title']}', {form['price']}"
+    """
+    Handles changes made to the metadata of a product
 
+    Parameters
+    ----------
+    item_id : int
+        The ID of the item to edit
+    vals : str, list
+        The cleaned form with the new values
+    """
+
+    # Construct UPDATE query
+    cols, vals = 'name, price', f"'{form['title']}', {form['price']}"
     if form['description']:
         cols += ', description'
         vals += f", '{form['description']}'"
     if form['photo_primary']:
+        # Update the primary photo
         photo_primary = form['photo_primary'].read()
-        photo_primary_url = cloud.uploader.upload(photo_primary, folder='againstthegrain')['secure_url']
+        photo_primary_url = cloud.uploader.upload(photo_primary, folder='template')['secure_url']
 
         cols += ', photo_primary'
         vals += f", '{photo_primary_url}'"
@@ -51,6 +77,20 @@ def handle_edit_item(item_id, form):
     UPDATE('item', where=f'id = {item_id}', cols=cols, vals=vals)
 
 def handle_photo_edit(item, deleted_photos, new_photos):
+    """
+    Handles changes made to the photos of a product
+
+    Parameters
+    ----------
+    item : dict
+        A dict representing the item to update
+    deleted_photos : list
+        The URLS of the photos to delete
+    new _photos : list
+        Byte objects of the photos to upload
+    """
+
+    # Get a list of the current photo URLs
     cur_photos = item['photos']
 
     # Delete selected photos
